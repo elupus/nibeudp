@@ -43,7 +43,27 @@ class ResponseRead(Command):
 @dataclass
 class ResponseData(Command):
     command: ClassVar[int] = 0x68
-    data: bytes
+    parameters: dict[int, int]
+
+    def to_bytes(self) -> bytes:
+        payload = b"".join(
+            register.to_bytes(2, "little") + data.to_bytes(2, "little")
+            for register, data in self.parameters.items()
+        )
+        return payload
+
+    @classmethod
+    def from_bytes(cls, payload: bytes) -> ResponseData:
+        parameters = {}
+        if len(payload) % 4:
+            raise ParseError(f"Length is not a multiple of 4: {len(payload)}")
+        for idx in range(0, len(payload), 4):
+            register = int.from_bytes(payload[idx : idx + 2], "little")
+            data = int.from_bytes(payload[idx + 2 : idx + 4], "little")
+            if register == 0xFFFF:
+                continue
+            parameters[register] = data
+        return cls(parameters)
 
 
 @dataclass
@@ -134,7 +154,7 @@ def parse(data: bytes):
         return ResponseWrite(data_payload), data_message
 
     if data_command == ResponseData.command:
-        return ResponseData(data_payload), data_message
+        return ResponseData.from_bytes(data_payload), data_message
 
     if data_command == ResponseRmu.command:
         return ResponseRmu(data_payload), data_message
