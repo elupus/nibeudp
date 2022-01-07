@@ -31,13 +31,38 @@ class CommandUnknown(Command):
 @dataclass
 class ResponseWrite(Command):
     command: ClassVar[int] = 0x6C
-    data: bytes
+    register: int
+
+    def to_bytes(self) -> bytes:
+        return self.register.to_bytes(2, "little")
+
+    @classmethod
+    def from_bytes(cls, payload: bytes):
+        if len(payload) == 0:
+            return None
+        if len(payload) != 2:
+            raise ParseError(f"Length is not 2: {len(payload)}")
+        return cls(int.from_bytes(payload, "little"))
 
 
 @dataclass
 class ResponseRead(Command):
     command: ClassVar[int] = 0x6A
-    data: bytes
+    register: int
+    value: int
+
+    def to_bytes(self) -> bytes:
+        return self.register.to_bytes(2, "little") + self.value.to_bytes(4, "little")
+
+    @classmethod
+    def from_bytes(cls, payload: bytes):
+        if len(payload) != 6:
+            raise ParseError(f"Length is not 6: {len(payload)}")
+
+        return cls(
+            int.from_bytes(payload[0:2], "little"),
+            int.from_bytes(payload[2:6], "little"),
+        )
 
 
 @dataclass
@@ -53,7 +78,7 @@ class ResponseData(Command):
         return payload
 
     @classmethod
-    def from_bytes(cls, payload: bytes) -> ResponseData:
+    def from_bytes(cls, payload: bytes):
         parameters = {}
         if len(payload) % 4:
             raise ParseError(f"Length is not a multiple of 4: {len(payload)}")
@@ -73,15 +98,48 @@ class ResponseRmu(Command):
 
 
 @dataclass
+class RequestReadNull(Command):
+    command: ClassVar[int] = 0x69
+
+
+@dataclass
 class RequestRead(Command):
     command: ClassVar[int] = 0x69
-    data: bytes
+    register: int
+
+    def to_bytes(self) -> bytes:
+        return self.register.to_bytes(2, "little")
+
+    @classmethod
+    def from_bytes(cls, payload: bytes):
+        if len(payload) != 2:
+            raise ParseError(f"Length is not 2: {len(payload)}")
+        return cls(int.from_bytes(payload, "little"))
+
+
+@dataclass
+class RequestWriteNull(Command):
+    command: ClassVar[int] = 0x6B
 
 
 @dataclass
 class RequestWrite(Command):
     command: ClassVar[int] = 0x6B
-    data: bytes
+    register: int
+    value: int
+
+    def to_bytes(self) -> bytes:
+        return self.register.to_bytes(2, "little") + self.value.to_bytes(4, "little")
+
+    @classmethod
+    def from_bytes(cls, payload: bytes):
+        if len(payload) != 6:
+            raise ParseError(f"Length is not 6: {len(payload)}")
+
+        return cls(
+            int.from_bytes(payload[0:2], "little"),
+            int.from_bytes(payload[2:6], "little"),
+        )
 
 
 @dataclass
@@ -147,25 +205,35 @@ def parse(data: bytes):
     else:
         raise ParseError(f"Invalid startcode {data[0].hex(' ')}")
 
-    if data_command == ResponseRead.command:
-        return ResponseRead(data_payload), data_message
+    return parse_payload(data_command, data_payload), data_message
 
-    if data_command == ResponseWrite.command:
-        return ResponseWrite(data_payload), data_message
 
-    if data_command == ResponseData.command:
-        return ResponseData.from_bytes(data_payload), data_message
+def parse_payload(command: int, payload: bytes):
+    if command == ResponseRead.command:
+        return ResponseRead.from_bytes(payload)
 
-    if data_command == ResponseRmu.command:
-        return ResponseRmu(data_payload), data_message
+    if command == ResponseWrite.command:
+        return ResponseWrite.from_bytes(payload)
 
-    if data_command == RequestRead.command:
-        return RequestRead(data_payload), data_message
+    if command == ResponseData.command:
+        return ResponseData.from_bytes(payload)
 
-    if data_command == RequestWrite.command:
-        return RequestWrite(data_payload), data_message
+    if command == ResponseRmu.command:
+        return ResponseRmu(payload)
 
-    return CommandUnknown(data_command, data_payload), data_message
+    if command == RequestRead.command and payload:
+        return RequestRead.from_bytes(payload)
+
+    if command == RequestReadNull.command:
+        return RequestReadNull()
+
+    if command == RequestWrite.command and payload:
+        return RequestWrite.from_bytes(payload)
+
+    if command == RequestWriteNull.command:
+        return RequestWriteNull()
+
+    return CommandUnknown(command, payload)
 
 
 async def server(listen_port=DEFAULT_PORT_RX):

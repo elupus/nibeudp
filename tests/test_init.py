@@ -4,8 +4,11 @@ from nibeudp import (
     CommandUnknown,
     MasterMessage,
     RequestRead,
+    RequestReadNull,
     RequestWrite,
+    RequestWriteNull,
     ResponseData,
+    ResponseRead,
     ResponseRmu,
     parse,
 )
@@ -16,12 +19,12 @@ from nibeudp import (
     [
         pytest.param(
             "5c 00 20 6b 00 4b a8",
-            (RequestWrite(b""), MasterMessage(0x20)),
+            (RequestWriteNull(), MasterMessage(0x20)),
             id="Buggy server responding with extra byte",
         ),
         pytest.param(
             "5c 00 20 6b 00 4b",
-            (RequestWrite(b""), MasterMessage(0x20)),
+            (RequestWriteNull(), MasterMessage(0x20)),
             id="Frame from MODBUS40",
         ),
         pytest.param(
@@ -71,7 +74,7 @@ from nibeudp import (
         ),
         pytest.param(
             "5C 00 20 69 00 49",
-            (RequestRead(b""), MasterMessage(0x20)),
+            (RequestReadNull(), MasterMessage(0x20)),
             id="Token Frame from MODBUS40",
         ),
     ],
@@ -85,3 +88,10 @@ def test_parse(data: str, result):
 def test_response_data(parameters: dict[int, int]):
     message = ResponseData.from_bytes(ResponseData(parameters).to_bytes())
     assert message.parameters == parameters
+
+
+@pytest.mark.parametrize("register,value", [(1234, 5678), (4321, 8765)])
+def test_response_read(register: int, value: int):
+    message = ResponseRead.from_bytes(ResponseRead(register, value).to_bytes())
+    assert message.register == register
+    assert message.value == value
