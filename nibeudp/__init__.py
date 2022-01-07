@@ -178,6 +178,11 @@ def unescape(data: Iterable[int], key: int):
         except StopIteration:
             return
 
+def calculate_checksum(data: bytes):
+    result = 0
+    for value in data:
+        result ^= value
+    return result
 
 def parse(data: bytes):
     if not data:
@@ -192,6 +197,8 @@ def parse(data: bytes):
         data_payload = data[5 : 5 + data_len]
         data_command = data[3]
         data_message = MasterMessage(data[2])
+        data_checksum = data[5+data_len]
+        checksum = calculate_checksum(data[2:5+data_len])
 
     elif data[0] == SlaveMessage.start:
         data = bytes(unescape(data, SlaveMessage.start))
@@ -202,8 +209,13 @@ def parse(data: bytes):
         data_payload = data[1 : 1 + data_len]
         data_command = data[1]
         data_message = SlaveMessage()
+        data_checksum = data[1+data_len]
+        checksum = calculate_checksum(data[0:1+data_len])
     else:
         raise ParseError(f"Invalid startcode {data[0].hex(' ')}")
+
+    if checksum != data_checksum:
+        raise ParseError(f"Invalid checksum {checksum} expected {data_checksum}")
 
     return parse_payload(data_command, data_payload), data_message
 
