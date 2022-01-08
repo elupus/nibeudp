@@ -19,10 +19,6 @@ DEFAULT_PORT_WRITE = 10001
 DEFAULT_HOST_RX = "0.0.0.0"
 
 
-START_MASTER = 0x5C
-START_SLAVE = 0xC0
-
-
 @dataclass
 class Command:
     command: int
@@ -37,6 +33,7 @@ class CommandUnknown(Command):
 
     def to_bytes(self) -> bytes:
         return self.data
+
 
 @dataclass
 class ResponseWrite(Command):
@@ -190,6 +187,7 @@ class SlaveMessage(Message):
         data.append(calculate_checksum(data, self.start))
         return bytes(data)
 
+
 class ParseError(Exception):
     pass
 
@@ -210,6 +208,7 @@ def unescape(data: Iterable[int], key: int):
         except StopIteration:
             return
 
+
 def escape(data: Iterable[int], key: int):
     it = iter(data)
     try:
@@ -226,13 +225,14 @@ def escape(data: Iterable[int], key: int):
         except StopIteration:
             return
 
+
 def calculate_checksum(data: Iterable[int], key: int):
     result = 0
     for value in data:
         result ^= value
 
     if result == key:
-        result = ((key << 4) | (key >> 4)) & 0xff
+        result = ((key << 4) | (key >> 4)) & 0xFF
 
     return result
 
@@ -302,14 +302,19 @@ def parse_payload(command: int, payload: bytes):
 
 
 class Connection(AsyncExitStack):
-    _listen_udp: UDPSocket
-    _request_read: UDPSocket
+    _udp: UDPSocket
 
-    def __init__(self, server_host, port_listen: int = DEFAULT_PORT_RX, port_read: int = DEFAULT_PORT_READ, port_write: int = DEFAULT_PORT_WRITE):
+    def __init__(
+        self,
+        server_host,
+        port_listen: int = DEFAULT_PORT_RX,
+        port_read: int = DEFAULT_PORT_READ,
+        port_write: int = DEFAULT_PORT_WRITE,
+    ):
         super().__init__()
         self._port_listen = port_listen
-        self._port_read   = port_read
-        self._port_write  = port_write
+        self._port_read = port_read
+        self._port_write = port_write
         self._server_host = server_host
 
     async def __aenter__(self):
@@ -320,19 +325,18 @@ class Connection(AsyncExitStack):
                 local_host=DEFAULT_HOST_RX,
             )
         )
-        super().__aenter__()
+        await super().__aenter__()
         return self
 
     async def send(self, command: RequestRead | RequestWrite):
+
+        data = SlaveMessage().to_bytes(command)
         if isinstance(command, RequestRead):
             port = self._port_read
         elif isinstance(command, RequestWrite):
             port = self._port_write
 
-        data = SlaveMessage().to_bytes(command)
-
-        
-
+        await self._udp.sendto(data, self._server_host, port)
 
     async def __aiter__(self):
         async for packet, (host, port) in self._udp:
@@ -350,10 +354,3 @@ class Connection(AsyncExitStack):
                 LOG.error(
                     "RX: %s from %s:%s -> %s", packet.hex(" "), host, port, str(exc)
                 )
-
-
-
-async def server(listen_port=DEFAULT_PORT_RX):
-    async with Connection(listen_port) as connection:
-        async for message in connection:
-            LOG.debug("RX: %s", message)
