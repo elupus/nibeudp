@@ -1,8 +1,10 @@
 import pytest
 
 from nibeudp import (
+    Command,
     CommandUnknown,
     MasterMessage,
+    Message,
     RequestRead,
     RequestReadNull,
     RequestWrite,
@@ -10,6 +12,7 @@ from nibeudp import (
     ResponseData,
     ResponseRead,
     ResponseRmu,
+    SlaveMessage,
     parse,
 )
 
@@ -82,6 +85,15 @@ from nibeudp import (
 def test_parse(data: str, result):
     command, message = parse(bytes.fromhex(data))
     assert (command, message) == result
+
+
+@pytest.mark.parametrize("message,command,expected", [
+    pytest.param(
+        SlaveMessage(), RequestRead(0x1234), "C0 69 02 34 12 8d"
+    )
+])
+def test_construct(message: Message, command: Command, expected: str):
+    assert message.to_bytes(command) == bytes.fromhex(expected)
 
 
 @pytest.mark.parametrize("parameters", [{1234: 5678, 4321: 8765}])

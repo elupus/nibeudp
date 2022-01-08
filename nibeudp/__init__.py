@@ -1,16 +1,21 @@
 from __future__ import annotations
+from abc import abstractmethod
 
 import logging
 import socket
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import ClassVar
+from contextlib import AsyncExitStack
 
-from anyio import create_udp_socket
+from anyio import create_udp_socket, create_connected_udp_socket
+from anyio.abc import UDPSocket
 
 LOG = logging.getLogger(__name__)
 
 DEFAULT_PORT_RX = 9999
+DEFAULT_PORT_READ = 10000
+DEFAULT_PORT_WRITE = 10001
 DEFAULT_HOST_RX = "0.0.0.0"
 
 
@@ -22,11 +27,16 @@ START_SLAVE = 0xC0
 class Command:
     command: int
 
+    def to_bytes(self) -> bytes:
+        return bytes()
+
 
 @dataclass
 class CommandUnknown(Command):
     data: bytes
 
+    def to_bytes(self) -> bytes:
+        return self.data
 
 @dataclass
 class ResponseWrite(Command):
@@ -38,8 +48,6 @@ class ResponseWrite(Command):
 
     @classmethod
     def from_bytes(cls, payload: bytes):
-        if len(payload) == 0:
-            return None
         if len(payload) != 2:
             raise ParseError(f"Length is not 2: {len(payload)}")
         return cls(int.from_bytes(payload, "little"))
@@ -146,17 +154,41 @@ class RequestWrite(Command):
 class Message:
     start: int
 
+    def to_bytes(self, command: Command):
+        return bytes()
+
 
 @dataclass
 class MasterMessage(Message):
     start: ClassVar[int] = 0x5C
     address: int
 
+    def to_bytes(self, command: Command):
+        data = bytearray()
+        data.append(self.start)
+        data.append(0x00)
+        data.append(self.address)
+        data.append(command.command)
+        payload = command.to_bytes()
+        data.append(len(payload))
+        data.extend(payload)
+        data.append(calculate_checksum(data[2:]), self.start)
+        return bytes(data)
+
 
 @dataclass
 class SlaveMessage(Message):
     start: ClassVar[int] = 0xC0
 
+    def to_bytes(self, command: Command):
+        data = bytearray()
+        data.append(self.start)
+        data.append(command.command)
+        payload = command.to_bytes()
+        data.append(len(payload))
+        data.extend(payload)
+        data.append(calculate_checksum(data, self.start))
+        return bytes(data)
 
 class ParseError(Exception):
     pass
@@ -178,11 +210,32 @@ def unescape(data: Iterable[int], key: int):
         except StopIteration:
             return
 
-def calculate_checksum(data: bytes):
+def escape(data: Iterable[int], key: int):
+    it = iter(data)
+    try:
+        yield next(it)
+    except StopIteration:
+        return
+
+    while True:
+        try:
+            val = next(it)
+            if val == key:
+                yield key
+            yield val
+        except StopIteration:
+            return
+
+def calculate_checksum(data: Iterable[int], key: int):
     result = 0
     for value in data:
         result ^= value
+
+    if result == key:
+        result = ((key << 4) | (key >> 4)) & 0xff
+
     return result
+
 
 def parse(data: bytes):
     if not data:
@@ -197,8 +250,8 @@ def parse(data: bytes):
         data_payload = data[5 : 5 + data_len]
         data_command = data[3]
         data_message = MasterMessage(data[2])
-        data_checksum = data[5+data_len]
-        checksum = calculate_checksum(data[2:5+data_len])
+        data_checksum = data[5 + data_len]
+        checksum = calculate_checksum(data[2 : 5 + data_len], data_message.start)
 
     elif data[0] == SlaveMessage.start:
         data = bytes(unescape(data, SlaveMessage.start))
@@ -209,10 +262,10 @@ def parse(data: bytes):
         data_payload = data[1 : 1 + data_len]
         data_command = data[1]
         data_message = SlaveMessage()
-        data_checksum = data[1+data_len]
-        checksum = calculate_checksum(data[0:1+data_len])
+        data_checksum = data[1 + data_len]
+        checksum = calculate_checksum(data[0 : 1 + data_len], data_message.start)
     else:
-        raise ParseError(f"Invalid startcode {data[0].hex(' ')}")
+        raise ParseError(f"Invalid startcode {hex(data[0])}")
 
     if checksum != data_checksum:
         raise ParseError(f"Invalid checksum {checksum} expected {data_checksum}")
@@ -248,17 +301,59 @@ def parse_payload(command: int, payload: bytes):
     return CommandUnknown(command, payload)
 
 
-async def server(listen_port=DEFAULT_PORT_RX):
-    async with await create_udp_socket(
-        family=socket.AF_INET, local_port=listen_port, local_host=DEFAULT_HOST_RX
-    ) as udp:
-        async for packet, (host, port) in udp:
+class Connection(AsyncExitStack):
+    _listen_udp: UDPSocket
+    _request_read: UDPSocket
+
+    def __init__(self, server_host, port_listen: int = DEFAULT_PORT_RX, port_read: int = DEFAULT_PORT_READ, port_write: int = DEFAULT_PORT_WRITE):
+        super().__init__()
+        self._port_listen = port_listen
+        self._port_read   = port_read
+        self._port_write  = port_write
+        self._server_host = server_host
+
+    async def __aenter__(self):
+        self._udp = await self.enter_async_context(
+            await create_udp_socket(
+                family=socket.AF_INET,
+                local_port=self._port_listen,
+                local_host=DEFAULT_HOST_RX,
+            )
+        )
+        super().__aenter__()
+        return self
+
+    async def send(self, command: RequestRead | RequestWrite):
+        if isinstance(command, RequestRead):
+            port = self._port_read
+        elif isinstance(command, RequestWrite):
+            port = self._port_write
+
+        data = SlaveMessage().to_bytes(command)
+
+        
+
+
+    async def __aiter__(self):
+        async for packet, (host, port) in self._udp:
             try:
+                if port not in (self._port_read, self._port_write):
+                    continue
+
+                self._server_host = host
                 message = parse(packet)
                 LOG.debug(
                     "RX: %s from %s:%s -> %s", packet.hex(" "), host, port, message
                 )
+                yield message
             except ParseError as exc:
                 LOG.error(
                     "RX: %s from %s:%s -> %s", packet.hex(" "), host, port, str(exc)
                 )
+
+
+
+async def server(listen_port=DEFAULT_PORT_RX):
+    async with Connection(listen_port) as connection:
+        async for message in connection:
+            LOG.debug("RX: %s", message)
