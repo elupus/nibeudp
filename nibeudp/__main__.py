@@ -1,7 +1,7 @@
-import logging
 import argparse
+import logging
 
-from anyio import run, create_task_group, sleep
+from anyio import create_task_group, run, sleep
 
 from . import Connection, RequestRead
 
@@ -14,7 +14,7 @@ parser.add_argument("host", type=str)
 command = parser.add_subparsers(dest="command", required=True)
 
 command_monitor = command.add_parser("monitor")
-command_monitor.add_argument("--registers", type=int, nargs='+', default=[])
+command_monitor.add_argument("--registers", type=int, nargs="+", default=[])
 
 args = parser.parse_args()
 
@@ -40,6 +40,7 @@ async def monitor():
 async def main():
     if args.command == "monitor":
         await monitor()
+
 
 try:
     run(main)

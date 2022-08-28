@@ -1,14 +1,14 @@
 from __future__ import annotations
-from abc import abstractmethod
 
 import logging
 import socket
+from abc import abstractmethod
 from collections.abc import Iterable
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from typing import ClassVar
-from contextlib import AsyncExitStack
 
-from anyio import create_udp_socket, create_connected_udp_socket
+from anyio import create_connected_udp_socket, create_udp_socket
 from anyio.abc import UDPSocket
 
 LOG = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ class Command:
     command: int
 
     def to_bytes(self) -> bytes:
-        return bytes()
+        return b""
 
 
 @dataclass
@@ -152,7 +152,7 @@ class Message:
     start: int
 
     def to_bytes(self, command: Command):
-        return bytes()
+        return b""
 
 
 @dataclass
