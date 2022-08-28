@@ -259,11 +259,11 @@ def parse(data: bytes):
         data_len = data[2]
         if len(data) < data_len + 4:
             raise ParseError(f"Invalid packet length: {data}")
-        data_payload = data[1 : 1 + data_len]
+        data_payload = data[3 : 3 + data_len]
         data_command = data[1]
         data_message = SlaveMessage()
-        data_checksum = data[1 + data_len]
-        checksum = calculate_checksum(data[0 : 1 + data_len], data_message.start)
+        data_checksum = data[3 + data_len]
+        checksum = calculate_checksum(data[0 : 3 + data_len], data_message.start)
     else:
         raise ParseError(f"Invalid startcode {hex(data[0])}")
 

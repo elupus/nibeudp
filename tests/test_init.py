@@ -80,6 +80,11 @@ from nibeudp import (
             (RequestReadNull(), MasterMessage(0x20)),
             id="Token Frame from MODBUS40",
         ),
+        pytest.param(
+            "C0 69 02 34 12 8d",
+            (RequestRead(0x1234), SlaveMessage()),
+            id="Slave read request",
+        ),
     ],
 )
 def test_parse(data: str, result):
@@ -90,6 +95,12 @@ def test_parse(data: str, result):
 @pytest.mark.parametrize("message,command,expected", [
     pytest.param(
         SlaveMessage(), RequestRead(0x1234), "C0 69 02 34 12 8d"
+    ),
+    pytest.param(
+        SlaveMessage(), RequestRead(12345), "C0 69 02 39 30 A2"
+    ),
+    pytest.param(
+        SlaveMessage(), RequestWrite(12345, 987654), "C0 6B 06 39 30 06 12 0F 00 BF"
     )
 ])
 def test_construct(message: Message, command: Command, expected: str):
