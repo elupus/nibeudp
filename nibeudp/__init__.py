@@ -3,12 +3,12 @@ from __future__ import annotations
 import logging
 import socket
 from abc import abstractmethod
-from collections.abc import Iterable
-from contextlib import AsyncExitStack
+from collections.abc import Callable, Iterable
+from contextlib import AsyncExitStack, contextmanager
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import ClassVar, Generic, TypeVar
 
-from anyio import create_connected_udp_socket, create_udp_socket
+from anyio import Event, create_connected_udp_socket, create_udp_socket
 from anyio.abc import UDPSocket
 
 LOG = logging.getLogger(__name__)
@@ -354,3 +354,74 @@ class Connection(AsyncExitStack):
                 LOG.error(
                     "RX: %s from %s:%s -> %s", packet.hex(" "), host, port, str(exc)
                 )
+
+
+M = TypeVar("M", bound=Command)
+
+
+class ResponseFuture(Generic[M]):
+    response: M
+
+    def __init__(self) -> None:
+        self.event = Event()
+
+    def set(self, response: M):
+        self.response = response
+        self.event.set()
+
+    async def get(self):
+        await self.event.wait()
+        return self.response
+
+
+class Controller:
+    def __init__(self, connection: Connection) -> None:
+        """Initialize controller."""
+        self._connection = connection
+        self._listeners: set[Callable[[Command], None]] = set()
+
+    @contextmanager
+    def listen(self, listener: Callable[[Command], None]):
+        self._listeners.add(listener)
+        try:
+            yield
+        finally:
+            self._listeners.pop(listener)
+
+    async def read(self, register: int) -> int:
+        command = RequestRead(register)
+        response = ResponseFuture[ResponseRead]()
+
+        def listener(reply: Command):
+            if not isinstance(reply, ResponseRead):
+                return
+            if reply.register != register:
+                return
+            response.set(reply)
+
+        with self.listen(listener):
+            await self._connection.send(command)
+            return (await response.get()).value
+
+    async def write(self, register: int, value: int) -> int:
+        command = RequestWrite(register, value)
+        response = ResponseFuture[ResponseWrite]()
+
+        def listener(reply: Command):
+            if not isinstance(reply, ResponseWrite):
+                return
+            if reply.register != register:
+                return
+            response.set(reply)
+
+        with self.listen(listener):
+            await self._connection.send(command)
+            await response.get()
+            return
+
+    async def __aiter__(self):
+        async for command in self._connection:
+            for listener in self._listeners:
+                listener(command)
+
+            yield command

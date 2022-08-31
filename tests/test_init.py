@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import pytest
+from anyio import create_task_group, fail_after, run, sleep
 
 from nibeudp import (
     Command,
@@ -10,6 +13,7 @@ from nibeudp import (
     RequestWrite,
     RequestWriteNull,
     ResponseData,
+    ResponseFuture,
     ResponseRead,
     ResponseRmu,
     SlaveMessage,
@@ -92,17 +96,16 @@ def test_parse(data: str, result):
     assert (command, message) == result
 
 
-@pytest.mark.parametrize("message,command,expected", [
-    pytest.param(
-        SlaveMessage(), RequestRead(0x1234), "C0 69 02 34 12 8d"
-    ),
-    pytest.param(
-        SlaveMessage(), RequestRead(12345), "C0 69 02 39 30 A2"
-    ),
-    pytest.param(
-        SlaveMessage(), RequestWrite(12345, 987654), "C0 6B 06 39 30 06 12 0F 00 BF"
-    )
-])
+@pytest.mark.parametrize(
+    "message,command,expected",
+    [
+        pytest.param(SlaveMessage(), RequestRead(0x1234), "C0 69 02 34 12 8d"),
+        pytest.param(SlaveMessage(), RequestRead(12345), "C0 69 02 39 30 A2"),
+        pytest.param(
+            SlaveMessage(), RequestWrite(12345, 987654), "C0 6B 06 39 30 06 12 0F 00 BF"
+        ),
+    ],
+)
 def test_construct(message: Message, command: Command, expected: str):
     assert message.to_bytes(command) == bytes.fromhex(expected)
 
@@ -118,3 +121,23 @@ def test_response_read(register: int, value: int):
     message = ResponseRead.from_bytes(ResponseRead(register, value).to_bytes())
     assert message.register == register
     assert message.value == value
+
+
+@pytest.mark.asyncio
+async def test_response_future_read():
+
+    response = ResponseFuture[ResponseRead]()
+    result: ResponseRead | None = None
+
+    with fail_after(10):
+
+        async def wait_set():
+            response.set(ResponseRead(1234, 5678))
+
+        async with create_task_group() as tg:
+            tg.start_soon(wait_set)
+            result = await response.get()
+
+        assert result
+        assert result.register == 1234
+        assert result.value == 5678
