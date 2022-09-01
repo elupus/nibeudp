@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import logging
 import socket
-from abc import abstractmethod
 from collections.abc import Callable, Iterable
 from contextlib import AsyncExitStack, contextmanager
 from dataclasses import dataclass
 from typing import ClassVar, Generic, TypeVar
 
-from anyio import Event, create_connected_udp_socket, create_udp_socket
+from anyio import Event, create_udp_socket
 from anyio.abc import UDPSocket
 
 LOG = logging.getLogger(__name__)
