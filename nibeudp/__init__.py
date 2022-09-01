@@ -3,8 +3,9 @@ from __future__ import annotations
 import logging
 import socket
 from collections.abc import Callable, Iterable
-from contextlib import AsyncExitStack, contextmanager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, contextmanager
 from dataclasses import dataclass
+from types import TracebackType
 from typing import ClassVar, Generic, TypeVar
 
 from anyio import Event, create_udp_socket
@@ -373,7 +374,7 @@ class ResponseFuture(Generic[M]):
         return self.response
 
 
-class Controller:
+class Controller(AbstractAsyncContextManager):
     def __init__(self, connection: Connection) -> None:
         """Initialize controller."""
         self._connection = connection
@@ -385,7 +386,7 @@ class Controller:
         try:
             yield
         finally:
-            self._listeners.pop(listener)
+            self._listeners.remove(listener)
 
     async def read(self, register: int) -> int:
         command = RequestRead(register)
@@ -417,6 +418,17 @@ class Controller:
             await self._connection.send(command)
             await response.get()
             return
+
+    async def __aenter__(self) -> Controller:
+        return self
+
+    async def __aexit__(
+        self,
+        __exc_type: type[BaseException] | None,
+        __exc_value: BaseException | None,
+        __traceback: TracebackType | None,
+    ) -> bool | None:
+        return None
 
     async def __aiter__(self):
         async for command in self._connection:
