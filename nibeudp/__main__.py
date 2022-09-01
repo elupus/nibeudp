@@ -1,28 +1,19 @@
-import argparse
 import logging
 
+import asyncclick as click
 from anyio import create_task_group, fail_after, run, sleep
 
-from . import Connection, Controller, RequestRead
+from . import Connection, Controller
 
 logging.basicConfig(level=logging.DEBUG)
 LOG = logging.getLogger(__name__)
 
-parser = argparse.ArgumentParser(description="Listen to pump messages")
-parser.add_argument("host", type=str)
 
-command = parser.add_subparsers(dest="command", required=True)
-
-command_monitor = command.add_parser("monitor")
-command_monitor.add_argument("--registers", type=int, nargs="+", default=[])
-
-args = parser.parse_args()
-
-
-async def monitor():
-    async with Connection(args.host) as connection, Controller(
-        connection
-    ) as controller:
+@click.command("monitor")
+@click.argument("host", type=str)
+@click.argument("registers", type=int, nargs=-1)
+async def monitor(host: str, registers: list[int]):
+    async with Connection(host) as connection, Controller(connection) as controller:
 
         async def reader():
             async for message in controller:
@@ -30,13 +21,13 @@ async def monitor():
 
         async def update():
             while True:
-                for register in args.registers:
+                for register in registers:
                     try:
                         async with fail_after(2):
                             value = await controller.read(register)
-                        print(f"{register}: {value}")
+                        click.echo(f"{register}: {value}")
                     except TimeoutError:
-                        print(f"{register}: TIMEOUT")
+                        click.echo(f"{register}: TIMEOUT")
                 await sleep(1.0)
 
         async with create_task_group() as tg:
@@ -44,12 +35,14 @@ async def monitor():
             tg.start_soon(update)
 
 
-async def main():
-    if args.command == "monitor":
-        await monitor()
+@click.group()
+def cli():
+    pass
 
+
+cli.add_command(monitor)
 
 try:
-    run(main)
+    cli()
 except KeyboardInterrupt:
     pass

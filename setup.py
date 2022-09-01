@@ -1,9 +1,10 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 setup(
     name="nibeudp",
     packages=find_packages(),
     install_requires=[
-        "anyio"
-    ]
+        "anyio",
+    ],
+    extras_require={"cli": ["asyncclick==8.*"]},
 )
