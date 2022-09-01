@@ -17,7 +17,7 @@ async def monitor(host: str, registers: list[int]):
 
         async def reader():
             async for message in controller:
-                LOG.debug("RX: %s", message)
+                click.echo(f"RX: {message}")
 
         async def update():
             while True:
@@ -25,9 +25,9 @@ async def monitor(host: str, registers: list[int]):
                     try:
                         async with fail_after(2):
                             value = await controller.read(register)
-                        click.echo(f"{register}: {value}")
+                        click.echo(f"READ {register}: {value}")
                     except TimeoutError:
-                        click.echo(f"{register}: TIMEOUT")
+                        click.echo(f"READ {register}: TIMEOUT")
                 await sleep(1.0)
 
         async with create_task_group() as tg:
