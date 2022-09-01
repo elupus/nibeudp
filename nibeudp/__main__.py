@@ -9,7 +9,12 @@ logging.basicConfig(level=logging.DEBUG)
 LOG = logging.getLogger(__name__)
 
 
-@click.command("monitor")
+@click.group()
+def cli():
+    pass
+
+
+@cli.command("monitor")
 @click.argument("host", type=str)
 @click.argument("registers", type=int, nargs=-1)
 async def monitor(host: str, registers: list[int]):
@@ -34,13 +39,6 @@ async def monitor(host: str, registers: list[int]):
             tg.start_soon(reader)
             tg.start_soon(update)
 
-
-@click.group()
-def cli():
-    pass
-
-
-cli.add_command(monitor)
 
 try:
     cli()
