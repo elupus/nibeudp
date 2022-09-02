@@ -5,13 +5,15 @@ from anyio import create_task_group, fail_after, run, sleep
 
 from . import Connection, Controller
 
-logging.basicConfig(level=logging.DEBUG)
-LOG = logging.getLogger(__name__)
-
 
 @click.group()
-def cli():
-    pass
+@click.option("-l", "--log-level", type=str, default="WARNING")
+def cli(log_level: str):
+    logging.basicConfig(
+        format="[%(levelname)-8s] %(message)s",
+        level=log_level,
+    )
+    logging.log(logging.INFO, "Log level set to %r", log_level)
 
 
 @cli.command("monitor")
@@ -42,5 +44,5 @@ async def monitor(host: str, registers: list[int]):
 
 try:
     cli()
-except KeyboardInterrupt:
+except (KeyboardInterrupt, SystemExit):
     pass
