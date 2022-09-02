@@ -148,6 +148,22 @@ class RequestWrite(Command):
 
 
 @dataclass
+class RequestAck(Command):
+    command: ClassVar[int] = 0x06
+
+    def to_bytes(self) -> bytes:
+        return b""
+
+
+@dataclass
+class RequestNak(Command):
+    command: ClassVar[int] = 0x15
+
+    def to_bytes(self) -> bytes:
+        return b""
+
+
+@dataclass
 class Message:
     start: int
 
@@ -297,6 +313,12 @@ def parse_payload(command: int, payload: bytes):
 
     if command == RequestWriteNull.command:
         return RequestWriteNull()
+
+    if command == RequestAck.command:
+        return RequestAck()
+
+    if command == RequestNak.command:
+        return RequestNak()
 
     return CommandUnknown(command, payload)
 
