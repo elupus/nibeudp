@@ -101,6 +101,10 @@ class ResponseRmu(Command):
     command: ClassVar[int] = 0x62
     data: bytes
 
+    @classmethod
+    def from_bytes(cls, payload: bytes):
+        return cls(payload)
+
 
 @dataclass
 class RequestReadNull(Command):
@@ -156,7 +160,7 @@ class Message:
 
 
 @dataclass
-class MasterMessage(Message):
+class MessageMaster(Message):
     start: ClassVar[int] = 0x5C
     address: int
     command: Command
@@ -175,7 +179,7 @@ class MasterMessage(Message):
 
 
 @dataclass
-class SlaveMessage(Message):
+class MessageSlave(Message):
     start: ClassVar[int] = 0xC0
     command: Command
 
@@ -198,6 +202,11 @@ class MessageAck(Message):
 @dataclass
 class MessageNak(Message):
     start: ClassVar[int] = 0x15
+
+
+@dataclass
+class MessageUnknown(Message):
+    data: bytes
 
 
 class ParseError(Exception):
@@ -253,8 +262,8 @@ def parse(data: bytes):
     if not data:
         raise ParseError("Empty packet")
 
-    if data[0] == MasterMessage.start:
-        data = bytes(unescape(data, MasterMessage.start))
+    if data[0] == MessageMaster.start:
+        data = bytes(unescape(data, MessageMaster.start))
 
         data_len = data[4]
         if len(data) < data_len + 6:
@@ -266,10 +275,10 @@ def parse(data: bytes):
         if checksum != data_checksum:
             raise ParseError(f"Invalid checksum {checksum} expected {data_checksum}")
         command = parse_payload(data_command, data_payload)
-        return MasterMessage(data[2], command)
+        return MessageMaster(data[2], command)
 
-    elif data[0] == SlaveMessage.start:
-        data = bytes(unescape(data, SlaveMessage.start))
+    elif data[0] == MessageSlave.start:
+        data = bytes(unescape(data, MessageSlave.start))
 
         data_len = data[2]
         if len(data) < data_len + 4:
@@ -281,7 +290,7 @@ def parse(data: bytes):
         if checksum != data_checksum:
             raise ParseError(f"Invalid checksum {checksum} expected {data_checksum}")
         command = parse_payload(data_command, data_payload)
-        return SlaveMessage(command)
+        return MessageSlave(command)
 
     elif data[0] == MessageAck.start:
         return MessageAck()
@@ -290,7 +299,7 @@ def parse(data: bytes):
         return MessageNak()
 
     else:
-        raise ParseError(f"Invalid startcode {hex(data[0])}")
+        return MessageUnknown(data[0], data[1:])
 
 
 def parse_payload(command: int, payload: bytes):
@@ -304,7 +313,7 @@ def parse_payload(command: int, payload: bytes):
         return ResponseData.from_bytes(payload)
 
     if command == ResponseRmu.command:
-        return ResponseRmu(payload)
+        return ResponseRmu.from_bytes(payload)
 
     if command == RequestRead.command and payload:
         return RequestRead.from_bytes(payload)
@@ -350,7 +359,7 @@ class Connection(AsyncExitStack):
 
     async def send(self, command: RequestRead | RequestWrite):
 
-        data = SlaveMessage(command).to_bytes()
+        data = MessageSlave(command).to_bytes()
         if isinstance(command, RequestRead):
             port = self._port_read
         elif isinstance(command, RequestWrite):
