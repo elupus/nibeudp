@@ -148,41 +148,26 @@ class RequestWrite(Command):
 
 
 @dataclass
-class RequestAck(Command):
-    command: ClassVar[int] = 0x06
-
-    def to_bytes(self) -> bytes:
-        return b""
-
-
-@dataclass
-class RequestNak(Command):
-    command: ClassVar[int] = 0x15
-
-    def to_bytes(self) -> bytes:
-        return b""
-
-
-@dataclass
 class Message:
     start: int
 
-    def to_bytes(self, command: Command):
-        return b""
+    def to_bytes(self, command: Command) -> bytes:
+        return bytes([self.start])
 
 
 @dataclass
 class MasterMessage(Message):
     start: ClassVar[int] = 0x5C
     address: int
+    command: Command
 
-    def to_bytes(self, command: Command):
+    def to_bytes(self):
         data = bytearray()
         data.append(self.start)
         data.append(0x00)
         data.append(self.address)
-        data.append(command.command)
-        payload = command.to_bytes()
+        data.append(self.command.command)
+        payload = self.command.to_bytes()
         data.append(len(payload))
         data.extend(payload)
         data.append(calculate_checksum(data[2:]), self.start)
@@ -192,16 +177,27 @@ class MasterMessage(Message):
 @dataclass
 class SlaveMessage(Message):
     start: ClassVar[int] = 0xC0
+    command: Command
 
-    def to_bytes(self, command: Command):
+    def to_bytes(self):
         data = bytearray()
         data.append(self.start)
-        data.append(command.command)
-        payload = command.to_bytes()
+        data.append(self.command.command)
+        payload = self.command.to_bytes()
         data.append(len(payload))
         data.extend(payload)
         data.append(calculate_checksum(data, self.start))
         return bytes(data)
+
+
+@dataclass
+class MessageAck(Message):
+    start: ClassVar[int] = 0x06
+
+
+@dataclass
+class MessageNak(Message):
+    start: ClassVar[int] = 0x15
 
 
 class ParseError(Exception):
@@ -265,9 +261,12 @@ def parse(data: bytes):
             raise ParseError(f"Invalid packet length: {data}")
         data_payload = data[5 : 5 + data_len]
         data_command = data[3]
-        data_message = MasterMessage(data[2])
         data_checksum = data[5 + data_len]
-        checksum = calculate_checksum(data[2 : 5 + data_len], data_message.start)
+        checksum = calculate_checksum(data[2 : 5 + data_len], data[0])
+        if checksum != data_checksum:
+            raise ParseError(f"Invalid checksum {checksum} expected {data_checksum}")
+        command = parse_payload(data_command, data_payload)
+        return MasterMessage(data[2], command)
 
     elif data[0] == SlaveMessage.start:
         data = bytes(unescape(data, SlaveMessage.start))
@@ -277,16 +276,21 @@ def parse(data: bytes):
             raise ParseError(f"Invalid packet length: {data}")
         data_payload = data[3 : 3 + data_len]
         data_command = data[1]
-        data_message = SlaveMessage()
         data_checksum = data[3 + data_len]
-        checksum = calculate_checksum(data[0 : 3 + data_len], data_message.start)
+        checksum = calculate_checksum(data[0 : 3 + data_len], data[0])
+        if checksum != data_checksum:
+            raise ParseError(f"Invalid checksum {checksum} expected {data_checksum}")
+        command = parse_payload(data_command, data_payload)
+        return SlaveMessage(command)
+
+    elif data[0] == MessageAck.start:
+        return MessageAck()
+
+    elif data[0] == MessageNak.start:
+        return MessageNak()
+
     else:
         raise ParseError(f"Invalid startcode {hex(data[0])}")
-
-    if checksum != data_checksum:
-        raise ParseError(f"Invalid checksum {checksum} expected {data_checksum}")
-
-    return parse_payload(data_command, data_payload), data_message
 
 
 def parse_payload(command: int, payload: bytes):
@@ -313,12 +317,6 @@ def parse_payload(command: int, payload: bytes):
 
     if command == RequestWriteNull.command:
         return RequestWriteNull()
-
-    if command == RequestAck.command:
-        return RequestAck()
-
-    if command == RequestNak.command:
-        return RequestNak()
 
     return CommandUnknown(command, payload)
 
@@ -352,7 +350,7 @@ class Connection(AsyncExitStack):
 
     async def send(self, command: RequestRead | RequestWrite):
 
-        data = SlaveMessage().to_bytes(command)
+        data = SlaveMessage(command).to_bytes()
         if isinstance(command, RequestRead):
             port = self._port_read
         elif isinstance(command, RequestWrite):
