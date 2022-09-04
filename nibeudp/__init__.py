@@ -14,8 +14,8 @@ from anyio.abc import UDPSocket
 LOG = logging.getLogger(__name__)
 
 DEFAULT_PORT_RX = 9999
-DEFAULT_PORT_READ = 10000
-DEFAULT_PORT_WRITE = 10001
+DEFAULT_PORT_READ = 9999
+DEFAULT_PORT_WRITE = 10000
 DEFAULT_HOST_RX = "0.0.0.0"
 
 
@@ -370,9 +370,6 @@ class Connection(AsyncExitStack):
     async def __aiter__(self):
         async for packet, (host, port) in self._udp:
             try:
-                if port not in (self._port_read, self._port_write):
-                    continue
-
                 self._server_host = host
                 message = parse(packet)
                 LOG.debug(
