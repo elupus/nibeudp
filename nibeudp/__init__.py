@@ -274,8 +274,6 @@ def parse(data: bytes):
         raise ParseError("Empty packet")
 
     if data[0] == MessageMaster.start:
-        data = bytes(unescape(data, MessageMaster.start))
-
         data_len = data[4]
         if len(data) < data_len + 6:
             raise ParseError(f"Invalid packet length: {data}")
@@ -285,7 +283,9 @@ def parse(data: bytes):
         checksum = calculate_checksum(data[2 : 5 + data_len], data[0])
         if checksum != data_checksum:
             raise ParseError(f"Invalid checksum {checksum} expected {data_checksum}")
-        command = parse_payload(data_command, data_payload)
+        command = parse_payload(
+            data_command, bytes(unescape(data_payload, MessageMaster.start))
+        )
         return MessageMaster(data[2], command)
 
     elif data[0] == MessageSlave.start:
@@ -300,7 +300,9 @@ def parse(data: bytes):
         checksum = calculate_checksum(data[0 : 3 + data_len], data[0])
         if checksum != data_checksum:
             raise ParseError(f"Invalid checksum {checksum} expected {data_checksum}")
-        command = parse_payload(data_command, data_payload)
+        command = parse_payload(
+            data_command, bytes(unescape(data_payload, MessageSlave.start))
+        )
         return MessageSlave(command)
 
     elif data[0] == MessageAck.start:

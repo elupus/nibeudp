@@ -31,6 +31,10 @@ from nibeudp import (
             id="Product Data",
         ),
         pytest.param(
+            "5c 00 02 a0 03 00 5c 5c a1",
+            (MessageMaster(0x02, CommandUnknown(0xA0, bytes.fromhex("00 5c")))),
+        ),
+        pytest.param(
             "5c 00 20 6b 00 4b a8",
             (MessageMaster(0x20, RequestWriteNull())),
             id="Buggy server responding with extra byte",
