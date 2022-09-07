@@ -154,12 +154,17 @@ class RequestWrite(Command):
 @dataclass
 class ResponseProduct(Command):
     command: ClassVar[int] = 0x6D
-    unknown: bytes
+    unknown: int
+    firmware: int
     product: str
 
     @classmethod
     def from_bytes(cls, payload: bytes):
-        return cls(payload[0:3], payload[3:].decode("ascii"))
+        return cls(
+            int.from_bytes(payload[0:1], "little"),
+            int.from_bytes(payload[1:3], "big"),
+            payload[3:].decode("ascii"),
+        )
 
 
 @dataclass
@@ -270,7 +275,7 @@ def calculate_checksum(data: Iterable[int], key: int):
 
 
 def parse(data: bytes):
-    if not data:
+    if len(data) < 5:
         raise ParseError("Empty packet")
 
     if data[0] == MessageMaster.start:
