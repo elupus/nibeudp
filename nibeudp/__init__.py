@@ -152,6 +152,17 @@ class RequestWrite(Command):
 
 
 @dataclass
+class ResponseProduct(Command):
+    command: ClassVar[int] = 0x6D
+    unknown: bytes
+    product: str
+
+    @classmethod
+    def from_bytes(cls, payload: bytes):
+        return cls(payload[0:3], payload[3:].decode("ascii"))
+
+
+@dataclass
 class Message:
     start: int
 
@@ -326,6 +337,9 @@ def parse_payload(command: int, payload: bytes):
 
     if command == RequestWriteNull.command:
         return RequestWriteNull()
+
+    if command == ResponseProduct.command:
+        return ResponseProduct.from_bytes(payload)
 
     return CommandUnknown(command, payload)
 
