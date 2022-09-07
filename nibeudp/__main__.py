@@ -3,7 +3,13 @@ import logging
 import asyncclick as click
 from anyio import create_task_group, fail_after, run, sleep
 
-from . import Connection, Controller
+from . import (
+    DEFAULT_PORT_READ,
+    DEFAULT_PORT_RX,
+    DEFAULT_PORT_WRITE,
+    Connection,
+    Controller,
+)
 
 
 @click.group()
@@ -19,8 +25,15 @@ def cli(log_level: str):
 @cli.command("monitor")
 @click.argument("host", type=str)
 @click.argument("registers", type=int, nargs=-1)
-async def monitor(host: str, registers: list[int]):
-    async with Connection(host) as connection, Controller(connection) as controller:
+@click.option("--port_listen", type=int, default=DEFAULT_PORT_RX)
+@click.option("--port_read", type=int, default=DEFAULT_PORT_READ)
+@click.option("--port_write", type=int, default=DEFAULT_PORT_WRITE)
+async def monitor(
+    host: str, registers: list[int], port_listen: int, port_read: int, port_write: int
+):
+    async with Connection(
+        host, port_listen, port_read, port_write
+    ) as connection, Controller(connection) as controller:
 
         async def reader():
             async for message in controller:
