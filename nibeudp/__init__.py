@@ -370,7 +370,9 @@ class Connection(AsyncExitStack):
     async def __aiter__(self):
         async for packet, (host, port) in self._udp:
             try:
-                self._server_host = host
+                if self._server_host != host:
+                    LOG.warning("Data from unexpected host %s", host)
+
                 message = parse(packet)
                 LOG.debug(
                     "RX: %s from %s:%s -> %s", packet.hex(" "), host, port, message
