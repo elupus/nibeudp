@@ -27,7 +27,7 @@ from nibeudp import (
     [
         pytest.param(
             "5c 00 20 6d 0b" + b"\x01$\xe3F1155-16".hex(" ") + "ec",
-            (MessageMaster(0x20, ResponseProduct(b"\x01$\xe3", "F1155-16"))),
+            (MessageMaster(0x20, ResponseProduct(1, 9443, "F1155-16"))),
             id="Product Data",
         ),
         pytest.param(
